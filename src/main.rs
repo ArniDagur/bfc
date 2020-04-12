@@ -37,7 +37,7 @@ mod bfir;
 mod bounds;
 mod diagnostics;
 mod execution;
-//mod llvm;
+mod llvm;
 mod peephole;
 mod shell;
 
