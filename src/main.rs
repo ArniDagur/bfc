@@ -8,10 +8,11 @@
 
 //! bfc is a highly optimising compiler for BF.
 
+extern crate inkwell;
 extern crate ansi_term;
 extern crate getopts;
 extern crate itertools;
-extern crate llvm_sys;
+// extern crate llvm_sys;
 #[cfg(test)]
 extern crate pretty_assertions;
 #[cfg(test)]
@@ -40,8 +41,8 @@ mod llvm;
 mod peephole;
 mod shell;
 
-#[cfg(test)]
-mod llvm_tests;
+// #[cfg(test)]
+// mod llvm_tests;
 #[cfg(test)]
 mod peephole_tests;
 #[cfg(test)]
@@ -188,64 +189,66 @@ fn compile_file(matches: &Matches) -> Result<(), String> {
         eprintln!("{}", info);
     }
 
-    llvm::init_llvm();
-    let target_triple = matches.opt_str("target");
-    let mut llvm_module = llvm::compile_to_module(path, target_triple.clone(), &instrs, &state);
+    let llvm_ctx = inkwell::context::Context::create();
 
-    if matches.opt_present("dump-llvm") {
-        let llvm_ir_cstr = llvm_module.to_cstring();
-        let llvm_ir = String::from_utf8_lossy(llvm_ir_cstr.as_bytes());
-        println!("{}", llvm_ir);
-        return Ok(());
-    }
+    // llvm::init_llvm();
+    // let target_triple = matches.opt_str("target");
+    // let mut llvm_module = llvm::compile_to_module(path, target_triple.clone(), &instrs, &state);
 
-    let llvm_opt_raw = matches
-        .opt_str("llvm-opt")
-        .unwrap_or_else(|| "3".to_owned());
-    let mut llvm_opt = llvm_opt_raw.parse::<i64>().unwrap_or(3);
-    if llvm_opt < 0 || llvm_opt > 3 {
-        // TODO: warn on unrecognised input.
-        llvm_opt = 3;
-    }
+    // if matches.opt_present("dump-llvm") {
+    //     let llvm_ir_cstr = llvm_module.to_cstring();
+    //     let llvm_ir = String::from_utf8_lossy(llvm_ir_cstr.as_bytes());
+    //     println!("{}", llvm_ir);
+    //     return Ok(());
+    // }
 
-    llvm::optimise_ir(&mut llvm_module, llvm_opt);
+    // let llvm_opt_raw = matches
+    //     .opt_str("llvm-opt")
+    //     .unwrap_or_else(|| "3".to_owned());
+    // let mut llvm_opt = llvm_opt_raw.parse::<i64>().unwrap_or(3);
+    // if llvm_opt < 0 || llvm_opt > 3 {
+    //     // TODO: warn on unrecognised input.
+    //     llvm_opt = 3;
+    // }
 
-    // Compile the LLVM IR to a temporary object file.
-    let object_file = convert_io_error(NamedTempFile::new())?;
-    let obj_file_path = object_file.path().to_str().expect("path not valid utf-8");
-    llvm::write_object_file(&mut llvm_module, &obj_file_path)?;
+    // llvm::optimise_ir(&mut llvm_module, llvm_opt);
 
-    let output_name = executable_name(path);
-    link_object_file(&obj_file_path, &output_name, target_triple)?;
+    // // Compile the LLVM IR to a temporary object file.
+    // let object_file = convert_io_error(NamedTempFile::new())?;
+    // let obj_file_path = object_file.path().to_str().expect("path not valid utf-8");
+    // llvm::write_object_file(&mut llvm_module, &obj_file_path)?;
 
-    let strip_opt = matches.opt_str("strip").unwrap_or_else(|| "yes".to_owned());
-    if strip_opt == "yes" {
-        strip_executable(&output_name)?
-    }
+    // let output_name = executable_name(path);
+    // link_object_file(&obj_file_path, &output_name, target_triple)?;
+
+    // let strip_opt = matches.opt_str("strip").unwrap_or_else(|| "yes".to_owned());
+    // if strip_opt == "yes" {
+    //     strip_executable(&output_name)?
+    // }
 
     Ok(())
 }
 
-fn link_object_file(
-    object_file_path: &str,
-    executable_path: &str,
-    target_triple: Option<String>,
-) -> Result<(), String> {
-    // Link the object file.
-    let clang_args = if let Some(ref target_triple) = target_triple {
-        vec![
-            object_file_path,
-            "-target",
-            &target_triple,
-            "-o",
-            &executable_path[..],
-        ]
-    } else {
-        vec![object_file_path, "-o", &executable_path[..]]
-    };
+// fn link_object_file(
+//     object_file_path: &str,
+//     executable_path: &str,
+//     target_triple: Option<String>,
+// ) -> Result<(), String> {
+//     // Link the object file.
+//     let clang_args = if let Some(ref target_triple) = target_triple {
+//         vec![
+//             object_file_path,
+//             "-target",
+//             &target_triple,
+//             "-o",
+//             &executable_path[..],
+//         ]
+//     } else {
+//         vec![object_file_path, "-o", &executable_path[..]]
+//     };
 
-    shell::run_shell_command("clang", &clang_args[..])
-}
+//     shell::run_shell_command("clang", &clang_args[..])
+// }
 
 fn strip_executable(executable_path: &str) -> Result<(), String> {
     let strip_args = ["-s", &executable_path[..]];
@@ -279,15 +282,15 @@ fn main() {
         "yes|no",
     );
 
-    let default_triple_cstring = llvm::get_default_target_triple();
-    let default_triple = default_triple_cstring.to_str().unwrap();
+    // let default_triple_cstring = llvm::get_default_target_triple();
+    // let default_triple = default_triple_cstring.to_str().unwrap();
 
-    opts.optopt(
-        "",
-        "target",
-        &format!("LLVM target triple (default: {})", default_triple),
-        "TARGET",
-    );
+    // opts.optopt(
+    //     "",
+    //     "target",
+    //     &format!("LLVM target triple (default: {})", default_triple),
+    //     "TARGET",
+    // );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
