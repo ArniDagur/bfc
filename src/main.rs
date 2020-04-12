@@ -22,13 +22,13 @@ extern crate tempfile;
 #[macro_use]
 extern crate matches;
 
-use diagnostics::{Info, Level};
+use crate::diagnostics::{Info, Level};
 use getopts::{Matches, Options};
 use std::env;
 use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
-use tempfile::NamedTempFile;
+
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
@@ -37,7 +37,7 @@ mod bfir;
 mod bounds;
 mod diagnostics;
 mod execution;
-mod llvm;
+//mod llvm;
 mod peephole;
 mod shell;
 
@@ -169,7 +169,7 @@ fn compile_file(matches: &Matches) -> Result<(), String> {
         return Ok(());
     }
 
-    let (state, execution_warning) = if opt_level == "2" {
+    let (_state, execution_warning) = if opt_level == "2" {
         execution::execute(&instrs, execution::max_steps())
     } else {
         let mut init_state = execution::ExecutionState::initial(&instrs[..]);
@@ -189,7 +189,7 @@ fn compile_file(matches: &Matches) -> Result<(), String> {
         eprintln!("{}", info);
     }
 
-    let llvm_ctx = inkwell::context::Context::create();
+    let _llvm_ctx = inkwell::context::Context::create();
 
     // llvm::init_llvm();
     // let target_triple = matches.opt_str("target");
