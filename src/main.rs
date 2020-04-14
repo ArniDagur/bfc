@@ -142,7 +142,9 @@ fn compile_file(path: &str, opt_level: u8, dump_ir: bool) -> Result<(), String> 
                     let mut targets: Vec<_> = changes.keys().collect();
                     targets.sort();
 
-                    prog.push_str("if (*ptr != 0) {");
+                    // The original "bfc" documentation talks about guarding
+                    // this for loop with `if (*ptr != 0) {...`. But the
+                    // mandelbrot program is faster without the extra branch.
                     for target in targets {
                         let factor = *changes.get(target).unwrap();
                         if factor != Wrapping(0) {
@@ -151,7 +153,6 @@ fn compile_file(path: &str, opt_level: u8, dump_ir: bool) -> Result<(), String> 
                         }
                     }
                     prog.push_str("*ptr = 0;");
-                    prog.push_str("}");
                 }
             }
         }
