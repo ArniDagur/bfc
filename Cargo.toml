@@ -15,7 +15,7 @@ tempfile = "*"
 getopts = "*"
 matches = "*"
 ansi_term = "*"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm10-0" }
+structopt = "*"
 
 [dev-dependencies]
 quickcheck = "*"
