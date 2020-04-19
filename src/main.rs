@@ -24,13 +24,11 @@ extern crate matches;
 use structopt::StructOpt;
 
 use crate::diagnostics::{Info, Level};
-use getopts::{Matches, Options};
 
-use std::num::Wrapping;
 use std::fs::File;
-use std::io::prelude::Read;
+use std::io::prelude::{Read, Write};
 use std::path::PathBuf;
-use std::process::exit;
+use std::process::{exit, Command, Stdio};
 
 mod bfir;
 mod bounds;
@@ -38,16 +36,22 @@ mod diagnostics;
 mod execution;
 mod peephole;
 
+mod c;
+
 #[cfg(test)]
 mod peephole_tests;
 #[cfg(test)]
 mod soundness_tests;
 
-use bfir::AstNode;
-
 // TODO: return a Vec<Info> that may contain warnings or errors,
 // instead of printing in lots of different place shere.
-fn compile_file(path: &str, opt_level: u8, dump_ir: bool) -> Result<(), String> {
+fn compile_file(
+    path: &str,
+    output: &str,
+    opt_level: u8,
+    native: bool,
+    dump_ir: bool,
+) -> Result<(), String> {
     let src = match slurp_file_to_string(path) {
         Ok(src) => src,
         Err(info) => {
@@ -94,72 +98,53 @@ fn compile_file(path: &str, opt_level: u8, dump_ir: bool) -> Result<(), String> 
         return Ok(());
     }
 
-    // let (state, execution_warning) = if opt_level == 2 {
-    //     execution::execute(&instrs, 10_000_000)
-    // } else {
-    //     let mut init_state = execution::ExecutionState::initial(&instrs[..]);
-    //     // TODO: this will crash on the empty program.
-    //     init_state.start_instr = Some(&instrs[0]);
-    //     (init_state, None)
-    // };
-    // if let Some(execution_warning) = execution_warning {
-    //     let info = Info {
-    //         level: Level::Warning,
-    //         filename: path.to_owned(),
-    //         message: execution_warning.message,
-    //         position: execution_warning.position,
-    //         source: Some(src),
-    //     };
-    //     eprintln!("{}", info);
-    // }
-
-    let mut prog =
-        "#include<stdio.h>\nint main(){ static char c[30000], *target, *ptr; ptr=c;".to_owned();
-    fn add_instrs_to_prog(instrs: &[AstNode], prog: &mut String) {
-        for instr in instrs {
-            match instr {
-                AstNode::Increment { amount, offset, .. } => {
-                    prog.push_str(&format!("*(ptr + {}) += {};", offset, amount));
-                }
-                AstNode::PointerIncrement { amount, .. } => {
-                    prog.push_str(&format!("ptr += {};", amount));
-                }
-                AstNode::Read { .. } => {
-                    prog.push_str("scanf(\"%c\", ptr);");
-                }
-                AstNode::Write { .. } => {
-                    prog.push_str("printf(\"%c\", *ptr);");
-                }
-                AstNode::Loop { body, .. } => {
-                    prog.push_str("while(*ptr) {");
-                    add_instrs_to_prog(&body, prog);
-                    prog.push_str("}");
-                }
-                AstNode::Set { amount, offset, .. } => {
-                    prog.push_str(&format!("*(ptr + {}) = {};", offset, amount));
-                }
-                AstNode::MultiplyMove { changes, .. } => {
-                    let mut targets: Vec<_> = changes.keys().collect();
-                    targets.sort();
-
-                    // The original "bfc" documentation talks about guarding
-                    // this for loop with `if (*ptr != 0) {...`. But the
-                    // mandelbrot program is faster without the extra branch.
-                    for target in targets {
-                        let factor = *changes.get(target).unwrap();
-                        if factor != Wrapping(0) {
-                            prog.push_str(&format!("target = ptr + {};", target));
-                            prog.push_str(&format!("*target += (*ptr) * {};", factor));
-                        }
-                    }
-                    prog.push_str("*ptr = 0;");
-                }
-            }
-        }
+    let (state, execution_warning) = if opt_level == 2 {
+        execution::execute(&instrs, 10_000_000)
+    } else {
+        let mut init_state = execution::ExecutionState::initial(&instrs[..]);
+        // TODO: this will crash on the empty program.
+        init_state.start_instr = Some(&instrs[0]);
+        (init_state, None)
+    };
+    if let Some(execution_warning) = execution_warning {
+        let info = Info {
+            level: Level::Warning,
+            filename: path.to_owned(),
+            message: execution_warning.message,
+            position: execution_warning.position,
+            source: Some(src),
+        };
+        eprintln!("{}", info);
     }
-    add_instrs_to_prog(&instrs, &mut prog);
-    prog += "}";
-    println!("{}", prog);
+
+    let c_program = c::c_prog_from_instructions(&instrs);
+
+    let mut args = vec!["-x", "c", "-"];
+    // Optimization level
+    let opt_level_arg = format!("-O{}", opt_level);
+    args.push(&opt_level_arg);
+    // Output
+    let output_arg = format!("-o{}", output);
+    args.push(&output_arg);
+    // Build for native architecture
+    if native {
+        args.push("-march=native")
+    }
+
+    let mut cc = Command::new("cc")
+        .args(&args)
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("Could not start C compiler");
+    {
+        let cc_stdin = cc
+            .stdin
+            .as_mut()
+            .expect("Could not get stdin of C compiler");
+        cc_stdin
+            .write_all(c_program.as_bytes())
+            .expect("Failed to write to C compiler");
+    }
 
     Ok(())
 }
@@ -180,9 +165,17 @@ struct Opt {
     #[structopt(short = "O", default_value = "2")]
     opt_level: u8,
 
+    /// build for the native architecture
+    #[structopt(long = "native")]
+    native: bool,
+
     /// strip symbols from the binary (default: yes)
     #[structopt(long = "strip")]
     strip: bool,
+
+    // output binary
+    #[structopt(short = "o", default_value="a.out", parse(from_os_str))]
+    output: PathBuf,
 
     // TODO: Replace with Vec<PathBuf>
     #[structopt(parse(from_os_str))]
@@ -197,7 +190,13 @@ fn main() {
         exit(1);
     }
 
-    match compile_file(opt.file.to_str().unwrap(), opt.opt_level, opt.dump_ir) {
+    match compile_file(
+        opt.file.to_str().unwrap(),
+        opt.output.to_str().unwrap(),
+        opt.opt_level,
+        opt.native,
+        opt.dump_ir,
+    ) {
         Ok(_) => {}
         Err(e) => {
             eprintln!("{}", e);

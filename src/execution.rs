@@ -244,9 +244,9 @@ pub fn execute_with_state<'a>(
 mod tests {
     use super::*;
 
+    use crate::bfir::{parse, Position};
     use pretty_assertions::assert_eq as pretty_assert_eq;
     use quickcheck::quickcheck;
-    use crate::bfir::{parse, Position};
     use std::collections::HashMap;
 
     const MAX_STEPS: u64 = 10_000_000;
