@@ -1,5 +1,7 @@
 use crate::bfir::AstNode;
+use std::io::prelude::Write;
 use std::num::Wrapping;
+use std::process::{Command, Stdio};
 
 fn add_instrs_to_c_prog(instrs: &[AstNode], prog: &mut String) {
     for instr in instrs {
@@ -52,4 +54,31 @@ pub fn c_prog_from_instructions(instrs: &[AstNode]) -> String {
     add_instrs_to_c_prog(&instrs, &mut prog);
     prog += "}";
     prog
+}
+pub fn compile_c_program(c_program: &str, output: &str, opt_level: u8, native: bool) {
+    let mut args = vec!["-x", "c", "-"];
+    // Optimization level
+    let opt_level_arg = format!("-O{}", opt_level);
+    args.push(&opt_level_arg);
+    // Output
+    let output_arg = format!("-o{}", output);
+    args.push(&output_arg);
+    // Build for native architecture
+    if native {
+        args.push("-march=native")
+    }
+
+    let mut cc = Command::new("cc")
+        .args(&args)
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("Could not start C compiler");
+
+    let cc_stdin = cc
+        .stdin
+        .as_mut()
+        .expect("Could not get stdin of C compiler");
+    cc_stdin
+        .write_all(c_program.as_bytes())
+        .expect("Failed to write to C compiler");
 }

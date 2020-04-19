@@ -26,9 +26,9 @@ use structopt::StructOpt;
 use crate::diagnostics::{Info, Level};
 
 use std::fs::File;
-use std::io::prelude::{Read, Write};
+use std::io::prelude::Read;
 use std::path::PathBuf;
-use std::process::{exit, Command, Stdio};
+use std::process::exit;
 
 mod bfir;
 mod bounds;
@@ -51,6 +51,7 @@ fn compile_file(
     opt_level: u8,
     native: bool,
     dump_ir: bool,
+    dump_c: bool,
 ) -> Result<(), String> {
     let src = match slurp_file_to_string(path) {
         Ok(src) => src,
@@ -118,33 +119,11 @@ fn compile_file(
     }
 
     let c_program = c::c_prog_from_instructions(&instrs);
-
-    let mut args = vec!["-x", "c", "-"];
-    // Optimization level
-    let opt_level_arg = format!("-O{}", opt_level);
-    args.push(&opt_level_arg);
-    // Output
-    let output_arg = format!("-o{}", output);
-    args.push(&output_arg);
-    // Build for native architecture
-    if native {
-        args.push("-march=native")
+    if dump_c {
+        println!("{}", c_program);
+        return Ok(());
     }
-
-    let mut cc = Command::new("cc")
-        .args(&args)
-        .stdin(Stdio::piped())
-        .spawn()
-        .expect("Could not start C compiler");
-    {
-        let cc_stdin = cc
-            .stdin
-            .as_mut()
-            .expect("Could not get stdin of C compiler");
-        cc_stdin
-            .write_all(c_program.as_bytes())
-            .expect("Failed to write to C compiler");
-    }
+    c::compile_c_program(&c_program, output, opt_level, native);
 
     Ok(())
 }
@@ -161,6 +140,10 @@ struct Opt {
     #[structopt(long = "dump-ir")]
     dump_ir: bool,
 
+    /// print C generated
+    #[structopt(long = "dump-c")]
+    dump_c: bool,
+
     /// optimize level (0 to 2)
     #[structopt(short = "O", default_value = "2")]
     opt_level: u8,
@@ -174,7 +157,7 @@ struct Opt {
     strip: bool,
 
     // output binary
-    #[structopt(short = "o", default_value="a.out", parse(from_os_str))]
+    #[structopt(short = "o", default_value = "a.out", parse(from_os_str))]
     output: PathBuf,
 
     // TODO: Replace with Vec<PathBuf>
@@ -196,6 +179,7 @@ fn main() {
         opt.opt_level,
         opt.native,
         opt.dump_ir,
+        opt.dump_c,
     ) {
         Ok(_) => {}
         Err(e) => {
