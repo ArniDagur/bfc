@@ -10,7 +10,20 @@ fn add_instrs_to_c_prog(instrs: &[AstNode], prog: &mut String) {
                 prog.push_str(&format!("*(ptr + {}) += {};", offset, amount));
             }
             AstNode::PointerIncrement { amount, .. } => {
-                prog.push_str(&format!("ptr += {};", amount));
+                if *amount < 0 {
+                    prog.push_str(&format!(
+                        "if ((ptr + {}) < c) {{ raise(SIGSEGV); }};",
+                        amount
+                    ));
+                } else if *amount > 0 {
+                    prog.push_str(&format!(
+                        "if ((ptr + {}) >= (c + NUM_CELLS)) {{ raise(SIGSEGV); }};",
+                        amount
+                    ));
+                }
+                if *amount != 0 {
+                    prog.push_str(&format!("ptr += {};", amount));
+                }
             }
             AstNode::Read { .. } => {
                 prog.push_str("scanf(\"%c\", ptr);");
@@ -48,7 +61,7 @@ fn add_instrs_to_c_prog(instrs: &[AstNode], prog: &mut String) {
 
 pub fn c_prog_from_instructions(instrs: &[AstNode]) -> String {
     let mut prog =
-        "#include<stdio.h>\nint main(){ static char c[30000] = { 0 }, *target, *ptr; ptr=c;"
+        "#include<stdio.h>\n#include<signal.h>\n#define NUM_CELLS 30000\nint main(){ static char c[NUM_CELLS] = { 0 }, *target, *ptr; ptr=c;"
             .to_owned();
 
     add_instrs_to_c_prog(&instrs, &mut prog);
